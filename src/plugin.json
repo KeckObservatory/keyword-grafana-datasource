@@ -1,0 +1,39 @@
+{
+  "type": "datasource",
+  "name": "keyword-grafana-datasource",
+  "id": "keck-observatory-keyword-grafana-datasource",
+  "metrics": true,
+  "backend": true,
+  "executable": "gpx_keyword-grafana-datasource",
+  "info": {
+    "description": "Interface to keyword archive service",
+    "author": {
+      "name": "Paul Richards",
+      "url": "http://keckobservatory.org"
+    },
+    "keywords": [
+      "keyword KTL"
+    ],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "links": [
+      {
+        "name": "Website",
+        "url": "https://github.com/grafana/simple-datasource-backend"
+      },
+      {
+        "name": "License",
+        "url": "https://github.com/grafana/simple-datasource-backend/blob/master/LICENSE"
+      }
+    ],
+    "screenshots": [],
+    "version": "%VERSION%",
+    "updated": "%TODAY%"
+  },
+  "dependencies": {
+    "grafanaVersion": "7.x.x",
+    "plugins": []
+  }
+}
