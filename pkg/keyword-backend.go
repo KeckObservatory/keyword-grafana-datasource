@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
+  "github.com/lib/pq"
+  "math"
+  "net/http"
 	"runtime"
 	"strings"
 	"time"
@@ -23,9 +25,14 @@ import (
 // Get the file and line number for logging clarity
 func fl() string {
 	_, fileName, fileLine, ok := runtime.Caller(1)
+
+  // Strip out the pathing information from the filename
+  ss := strings.Split(fileName, "/")
+  shortFileName := ss[len(ss)-1]
+
 	var s string
 	if ok {
-		s = fmt.Sprintf("(%s:%d)", fileName, fileLine)
+		s = fmt.Sprintf("(%s:%d) ", shortFileName, fileLine)
 	} else {
 		s = ""
 	}
@@ -102,7 +109,7 @@ func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDa
 	// Get the configuration
 	config, err := LoadSettings(req.PluginContext)
 	if err != nil {
-		log.DefaultLogger.Info(fl() + "settings load error")
+		log.DefaultLogger.Error(fl() + "settings load error")
 		return nil, err
 	}
 
@@ -112,7 +119,7 @@ func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDa
 	// Open the Postgres interface
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		log.DefaultLogger.Info(fl() + "DB connection failure")
+		log.DefaultLogger.Error(fl() + "DB connection failure")
 	}
 	defer db.Close()
 
@@ -137,7 +144,6 @@ type queryModel struct {
 	IntervalMs    int    `json:"intervalMs"`
 	MaxDataPoints int    `json:"maxDataPoints"`
 	//OrgId string `json:"orgId"`
-	//QueryText string `json:"queryText"`
 	//RefId string `json:"refId"`
 }
 
@@ -153,14 +159,14 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 	}
 
 	// Create an empty data frame response and add time dimension
-	frame := data.NewFrame("response")
-	frame.Fields = append(frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
+	empty_frame := data.NewFrame("response")
+  empty_frame.Fields = append(empty_frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
 
 	// Return empty frame if query is empty
 	if qm.QueryText == "" {
 
 		// add the frames to the response
-		response.Frames = append(response.Frames, frame)
+		response.Frames = append(response.Frames, empty_frame)
 		return response
 	}
 
@@ -169,12 +175,93 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 		log.DefaultLogger.Warn(fl() + "format is empty, defaulting to time series")
 	}
 
-	// Retrieve the values from the archiver
+  // Pick apart the keyword name from the service
+	sk := strings.Split(qm.QueryText, ".")
+  service := sk[0]
+	keyword := sk[1]
 
-	// Add the values
-	frame.Fields = append(frame.Fields,
-		data.NewField("values", nil, []int64{1, 31}),
-	)
+  // Retrieve the values from the archiver
+  from_u := float64(query.TimeRange.From.UnixNano()) * 1E-9
+  to_u := float64(query.TimeRange.To.UnixNano()) * 1E-9
+  //log.DefaultLogger.Debug(fl() + fmt.Sprintf("%f -> %f", from_u, to_u))
+
+  // Strip bad characters from the service in case of SQL injection attack
+  service = pq.QuoteIdentifier(service)
+
+  // Build the SQL query
+  sql_count := fmt.Sprintf("select count(time) from %s where keyword = $1 and time >= $2 and time <= $3;", service)
+
+  // Run the query once to see how many we are going to get back
+  row := db.QueryRow(sql_count, keyword, from_u, to_u)
+
+  // Get the count value out of the query result
+  var count int32
+  switch err := row.Scan(&count); err {
+    case sql.ErrNoRows:
+      log.DefaultLogger.Error(fl() + "query no rows returned")
+      // Send back an empty frame
+      response.Frames = append(response.Frames, empty_frame)
+      return response
+
+    case nil:
+      log.DefaultLogger.Debug(fl() + fmt.Sprintf("query yielded %d rows", count))
+
+    default:
+      log.DefaultLogger.Error(fl() + "unknown error from row.Scan")
+      // Send back an empty frame
+      response.Frames = append(response.Frames, empty_frame)
+      return response
+  }
+
+
+
+  sql := fmt.Sprintf("select time, binvalue from %s where keyword = $1 and time >= $2 and time <= $3;", service)
+  rows, err := db.Query(sql, keyword, from_u, to_u)
+
+  if err != nil {
+    log.DefaultLogger.Error(fl() + "query retrieval error")
+    return response
+  }
+  defer rows.Close()
+
+  // Store times and values here first
+  times := make([]time.Time, count)
+  values := make([]float64, count)
+
+  var tf float64
+  var v float64
+  var i int32
+
+  // Iterate only as many rows as predicted, it's possible more rows arrived after the initial query executed!
+  for i = 0; i < count; i++ {
+
+    // Get the next row
+    if rows.Next() {
+
+      // Pull the elements out of the row
+      err = rows.Scan(&tf, &v)
+      if err != nil {
+        log.DefaultLogger.Error(fl() + "query scan error")
+        break
+      }
+    }
+
+    // Separate the fractional seconds so we can convert it into a time.Time
+    sec, dec := math.Modf(tf)
+    times[i] = time.Unix(int64(sec), int64(dec*(1e9)))
+    values[i] = v
+  }
+
+  // get any error encountered during iteration
+  err = rows.Err()
+  if err != nil {
+    log.DefaultLogger.Error(fl() + "query row error")
+  }
+
+  // Start a new frame and add the times + values
+  frame := data.NewFrame("response")
+  frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+  frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
 
 	// add the frames to the response
 	response.Frames = append(response.Frames, frame)
@@ -265,7 +352,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 	ctx := req.Context()
 	cfg, err := LoadSettings(httpadapter.PluginConfigFromContext(ctx))
 	if err != nil {
-		log.DefaultLogger.Info(fl() + "settings load error")
+		log.DefaultLogger.Error(fl() + "settings load error")
 		writeResult(rw, "?", nil, err)
 		return
 	}
@@ -276,7 +363,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 	// See if we can open the Postgres interface
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		log.DefaultLogger.Info(fl() + "DB connection error")
+		log.DefaultLogger.Error(fl() + "DB connection error")
 		writeResult(rw, "?", nil, err)
 		return
 	}
@@ -292,7 +379,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		rows, err := db.Query(sqlStatement, service)
 
 		if err != nil {
-			log.DefaultLogger.Info(fl() + "keywords retrieval failure")
+			log.DefaultLogger.Error(fl() + "keywords retrieval failure")
 			writeResult(rw, "?", nil, err)
 		}
 		defer rows.Close()
@@ -305,7 +392,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		for rows.Next() {
 			err = rows.Scan(&keyword)
 			if err != nil {
-				log.DefaultLogger.Info(fl() + "keywords scan error")
+				log.DefaultLogger.Error(fl() + "keywords scan error")
 				writeResult(rw, "?", nil, err)
 			}
 
@@ -316,7 +403,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		// get any error encountered during iteration
 		err = rows.Err()
 		if err != nil {
-			log.DefaultLogger.Info(fl() + "services row error")
+			log.DefaultLogger.Error(fl() + "services row error")
 			writeResult(rw, "?", nil, err)
 		}
 
@@ -330,7 +417,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		rows, err := db.Query(sqlStatement)
 
 		if err != nil {
-			log.DefaultLogger.Info(fl() + "services count error")
+			log.DefaultLogger.Error(fl() + "services count error")
 			writeResult(rw, "?", nil, err)
 		}
 		defer rows.Close()
@@ -343,7 +430,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		for rows.Next() {
 			err = rows.Scan(&service)
 			if err != nil {
-				log.DefaultLogger.Info(fl() + "services scan error")
+				log.DefaultLogger.Error(fl() + "services scan error")
 				writeResult(rw, "?", nil, err)
 			}
 
@@ -354,7 +441,7 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		// get any error encountered during iteration
 		err = rows.Err()
 		if err != nil {
-			log.DefaultLogger.Info(fl() + "services row error")
+			log.DefaultLogger.Error(fl() + "services row error")
 			writeResult(rw, "?", nil, err)
 		}
 
