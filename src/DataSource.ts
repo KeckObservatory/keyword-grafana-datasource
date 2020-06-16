@@ -1,9 +1,9 @@
 import { DataSourceInstanceSettings, SelectableValue } from '@grafana/data';
 import { DataSourceWithBackend } from '@grafana/runtime';
-import { MyDataSourceOptions, MyQuery } from './types';
+import { KeywordDataSourceOptions, KeywordQuery } from './types';
 
-export class DataSource extends DataSourceWithBackend<MyQuery, MyDataSourceOptions> {
-  constructor(instanceSettings: DataSourceInstanceSettings<MyDataSourceOptions>) {
+export class DataSource extends DataSourceWithBackend<KeywordQuery, KeywordDataSourceOptions> {
+  constructor(instanceSettings: DataSourceInstanceSettings<KeywordDataSourceOptions>) {
     super(instanceSettings);
   }
 

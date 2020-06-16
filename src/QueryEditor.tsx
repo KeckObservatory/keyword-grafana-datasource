@@ -1,12 +1,12 @@
 import defaults from 'lodash/defaults';
 
-import React, { ChangeEvent, PureComponent } from 'react';
-import { InlineFormLabel, SegmentAsync } from '@grafana/ui';
+import React, { PureComponent } from 'react';
+import { InlineFormLabel, SegmentAsync, Select } from '@grafana/ui';
 import { QueryEditorProps } from '@grafana/data';
 import { DataSource } from './DataSource';
-import { defaultQuery, MyDataSourceOptions, MyQuery } from './types';
+import { defaultQuery, KeywordDataSourceOptions, KeywordQuery } from './types';
 
-type Props = QueryEditorProps<DataSource, MyQuery, MyDataSourceOptions>;
+type Props = QueryEditorProps<DataSource, KeywordQuery, KeywordDataSourceOptions>;
 
 export class QueryEditor extends PureComponent<Props> {
   onServiceChange = (item: any) => {
@@ -22,22 +22,23 @@ export class QueryEditor extends PureComponent<Props> {
       return; // ignore delete
     }
 
-    //onChange({ ...query, channel: item.value });
     query.keyword = item.value;
     query.queryText = query.service + '.' + query.keyword;
     onChange({ ...query, keyword: item.value });
     onRunQuery();
   };
 
-  onQueryTextChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const { onChange, query } = this.props;
-    onChange({ ...query, queryText: event.target.value });
-  };
+  unitConversionOptions = [
+    { label: 'none', value: 0 },
+    { label: 'degrees to radians', value: 1 },
+    { label: 'radians to degrees', value: 2 },
+    { label: 'Kelvin to Celcius', value: 3 },
+    { label: 'Celcius to Kelvin', value: 4 },
+  ];
 
-  onConstantChange = (event: ChangeEvent<HTMLInputElement>) => {
+  onUnitConversionChange = (item: any) => {
     const { onChange, query, onRunQuery } = this.props;
-    onChange({ ...query, constant: parseFloat(event.target.value) });
-    // executes the query
+    onChange({ ...query, unitConversion: item.value });
     onRunQuery();
   };
 
@@ -45,34 +46,51 @@ export class QueryEditor extends PureComponent<Props> {
     const datasource = this.props.datasource;
     const query = defaults(this.props.query, defaultQuery);
 
+    // noinspection CheckTagEmptyBody
     return (
-      <div className="gf-form-inline">
-        <InlineFormLabel
-          width={10}
-          className="query-keyword"
-          tooltip={
-            <p>
-              Select a <code>keyword</code>.
-            </p>
-          }
-        >
-          Keyword selection
-        </InlineFormLabel>
-        <SegmentAsync
-          loadOptions={() => datasource.getServices()}
-          placeholder="dcs1"
-          value={query.service}
-          allowCustomValue={false}
-          onChange={this.onServiceChange}
-        ></SegmentAsync>
-        <SegmentAsync
-          loadOptions={() => datasource.getKeywords(query.service)}
-          placeholder="PRIMTEMP"
-          value={query.keyword}
-          allowCustomValue={false}
-          onChange={this.onKeywordChange}
-        ></SegmentAsync>
-      </div>
+      <>
+        <div className="gf-form-inline">
+          <InlineFormLabel
+            width={10}
+            className="query-keyword"
+            tooltip={
+              <p>
+                Select a <code>keyword</code>.
+              </p>
+            }
+          >
+            Keyword selection
+          </InlineFormLabel>
+          <SegmentAsync
+            loadOptions={() => datasource.getServices()}
+            placeholder="dcs1"
+            value={query.service}
+            allowCustomValue={false}
+            onChange={this.onServiceChange}
+          ></SegmentAsync>
+          <SegmentAsync
+            loadOptions={() => datasource.getKeywords(query.service)}
+            placeholder="PRIMTEMP"
+            value={query.keyword}
+            allowCustomValue={false}
+            onChange={this.onKeywordChange}
+          ></SegmentAsync>
+        </div>
+        <div className="gf-form-inline">
+          <InlineFormLabel width={10} className="convert-units" tooltip={<p>Convert units.</p>}>
+            Units conversion
+          </InlineFormLabel>
+          <Select
+            width={20}
+            placeholder={'none'}
+            defaultValue={0}
+            options={this.unitConversionOptions}
+            value={query.unitConversion}
+            allowCustomValue={false}
+            onChange={this.onUnitConversionChange}
+          />
+        </div>
+      </>
     );
   }
 }

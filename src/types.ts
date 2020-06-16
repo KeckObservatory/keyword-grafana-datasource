@@ -1,23 +1,23 @@
 import { DataQuery, DataSourceJsonData } from '@grafana/data';
 
-export interface MyQuery extends DataQuery {
-  queryText?: string;
-  constant: number;
+export interface KeywordQuery extends DataQuery {
+  queryText: string;
   service: string;
   keyword: string;
+  unitConversion: number;
 }
 
-export const defaultQuery: Partial<MyQuery> = {
-  constant: 6.5,
+export const defaultQuery: Partial<KeywordQuery> = {
+  unitConversion: 0,
 };
 
 /**
  * These are options configured for each DataSource instance
  */
-export interface MyDataSourceOptions extends DataSourceJsonData {
-  server?: string;
-  port?: string;
-  role?: string;
-  database?: string;
-  metatable?: string;
+export interface KeywordDataSourceOptions extends DataSourceJsonData {
+  server: string;
+  port: string;
+  role: string;
+  database: string;
+  metatable: string;
 }

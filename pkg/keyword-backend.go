@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-  "github.com/lib/pq"
-  "math"
-  "net/http"
+	"github.com/lib/pq"
+	"math"
+	"net/http"
 	"runtime"
 	"strings"
 	"time"
@@ -26,9 +26,9 @@ import (
 func fl() string {
 	_, fileName, fileLine, ok := runtime.Caller(1)
 
-  // Strip out the pathing information from the filename
-  ss := strings.Split(fileName, "/")
-  shortFileName := ss[len(ss)-1]
+	// Strip out the pathing information from the filename
+	ss := strings.Split(fileName, "/")
+	shortFileName := ss[len(ss)-1]
 
 	var s string
 	if ok {
@@ -47,6 +47,15 @@ type DatasourceSettings struct {
 	Database  string `json:"database"`
 	MetaTable string `json:"metatable"`
 }
+
+// Define the unit conversion transforms, this maps onto the unitConversionOptions list in QueryEditor.tsx
+const (
+	UNIT_CONVERT_NONE       = iota
+	UNIT_CONVERT_DEG_TO_RAD = iota
+	UNIT_CONVERT_RAD_TO_DEG = iota
+	UNIT_CONVERT_K_TO_C     = iota
+	UNIT_CONVERT_C_TO_K     = iota
+)
 
 // LoadSettings gets the relevant settings from the plugin context
 func LoadSettings(ctx backend.PluginContext) (*DatasourceSettings, error) {
@@ -120,6 +129,7 @@ func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDa
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		log.DefaultLogger.Error(fl() + "DB connection failure")
+		return nil, err
 	}
 	defer db.Close()
 
@@ -139,10 +149,11 @@ type queryModel struct {
 	//Constant string `json:"constant"`
 	//Datasource string `json:"datasource"`
 	//DatasourceId string `json:"datasourceId"`
-	Format        string `json:"format"`
-	QueryText     string `json:"queryText"`
-	IntervalMs    int    `json:"intervalMs"`
-	MaxDataPoints int    `json:"maxDataPoints"`
+	Format         string `json:"format"`
+	QueryText      string `json:"queryText"`
+	UnitConversion int    `json:"unitConversion"`
+	IntervalMs     int    `json:"intervalMs"`
+	MaxDataPoints  int    `json:"maxDataPoints"`
 	//OrgId string `json:"orgId"`
 	//RefId string `json:"refId"`
 }
@@ -153,6 +164,7 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 
 	response := backend.DataResponse{}
 
+	// Return an error if the unmarshal fails
 	response.Error = json.Unmarshal(query.JSON, &qm)
 	if response.Error != nil {
 		return response
@@ -160,7 +172,7 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 
 	// Create an empty data frame response and add time dimension
 	empty_frame := data.NewFrame("response")
-  empty_frame.Fields = append(empty_frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
+	empty_frame.Fields = append(empty_frame.Fields, data.NewField("time", nil, []time.Time{query.TimeRange.From, query.TimeRange.To}))
 
 	// Return empty frame if query is empty
 	if qm.QueryText == "" {
@@ -175,93 +187,132 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 		log.DefaultLogger.Warn(fl() + "format is empty, defaulting to time series")
 	}
 
-  // Pick apart the keyword name from the service
+	// Pick apart the keyword name from the service
 	sk := strings.Split(qm.QueryText, ".")
-  service := sk[0]
+	service := sk[0]
 	keyword := sk[1]
 
-  // Retrieve the values from the archiver
-  from_u := float64(query.TimeRange.From.UnixNano()) * 1E-9
-  to_u := float64(query.TimeRange.To.UnixNano()) * 1E-9
-  //log.DefaultLogger.Debug(fl() + fmt.Sprintf("%f -> %f", from_u, to_u))
+	// Retrieve the values from the keyword archiver with Unix time as a floating point
+	from_u := float64(query.TimeRange.From.UnixNano()) * 1e-9
+	to_u := float64(query.TimeRange.To.UnixNano()) * 1e-9
 
-  // Strip bad characters from the service in case of SQL injection attack
-  service = pq.QuoteIdentifier(service)
+	// Strip bad characters from the service in case of SQL injection attack
+	// TODO - Is this sufficient?
+	service = pq.QuoteIdentifier(service)
 
-  // Build the SQL query
-  sql_count := fmt.Sprintf("select count(time) from %s where keyword = $1 and time >= $2 and time <= $3;", service)
+	// Build a SQL query for just counting
+	sql_count := fmt.Sprintf("select count(time) from %s where keyword = $1 and time >= $2 and time <= $3;", service)
 
-  // Run the query once to see how many we are going to get back
-  row := db.QueryRow(sql_count, keyword, from_u, to_u)
+	// Run the query once to see how many we are going to get back
+	row := db.QueryRow(sql_count, keyword, from_u, to_u)
 
-  // Get the count value out of the query result
-  var count int32
-  switch err := row.Scan(&count); err {
-    case sql.ErrNoRows:
-      log.DefaultLogger.Error(fl() + "query no rows returned")
-      // Send back an empty frame
-      response.Frames = append(response.Frames, empty_frame)
-      return response
+	// Get the count value out of the query result
+	var count int32
+	switch err := row.Scan(&count); err {
+	case sql.ErrNoRows:
+		log.DefaultLogger.Error(fl() + "query no rows returned")
 
-    case nil:
-      log.DefaultLogger.Debug(fl() + fmt.Sprintf("query yielded %d rows", count))
+		// Send back an empty frame since there's no data to be had
+		response.Frames = append(response.Frames, empty_frame)
+		return response
 
-    default:
-      log.DefaultLogger.Error(fl() + "unknown error from row.Scan")
-      // Send back an empty frame
-      response.Frames = append(response.Frames, empty_frame)
-      return response
-  }
+	case nil:
+		log.DefaultLogger.Debug(fl() + fmt.Sprintf("query yielded %d rows", count))
 
+	default:
+		log.DefaultLogger.Error(fl() + "Error from row.Scan: " + err.Error())
+		// Send back an empty frame, the query failed in some way
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = err
+		return response
+	}
 
+	// Setup and perform the query for the real data set now
+	sql := fmt.Sprintf("select time, binvalue from %s where keyword = $1 and time >= $2 and time <= $3;", service)
+	rows, err := db.Query(sql, keyword, from_u, to_u)
 
-  sql := fmt.Sprintf("select time, binvalue from %s where keyword = $1 and time >= $2 and time <= $3;", service)
-  rows, err := db.Query(sql, keyword, from_u, to_u)
+	if err != nil {
+		log.DefaultLogger.Error(fl() + "query retrieval error: " + err.Error())
+		response.Error = err
+		return response
+	}
+	defer rows.Close()
 
-  if err != nil {
-    log.DefaultLogger.Error(fl() + "query retrieval error")
-    return response
-  }
-  defer rows.Close()
+	// Store times and values here first
+	times := make([]time.Time, count)
+	values := make([]float64, count)
 
-  // Store times and values here first
-  times := make([]time.Time, count)
-  values := make([]float64, count)
+	var tf float64
+	var tv, v float64
+	var i int32
 
-  var tf float64
-  var v float64
-  var i int32
+	// Iterate only as many rows as predicted, it's possible more rows arrived after the initial query executed!
+	for i = 0; i < count; i++ {
 
-  // Iterate only as many rows as predicted, it's possible more rows arrived after the initial query executed!
-  for i = 0; i < count; i++ {
+		// Get the next row
+		if rows.Next() {
 
-    // Get the next row
-    if rows.Next() {
+			// Pull the elements out of the row
+			err = rows.Scan(&tf, &tv)
+			if err != nil {
+				log.DefaultLogger.Error(fl() + "query scan error: " + err.Error())
 
-      // Pull the elements out of the row
-      err = rows.Scan(&tf, &v)
-      if err != nil {
-        log.DefaultLogger.Error(fl() + "query scan error")
-        break
-      }
-    }
+				// Send back an empty frame, the query failed in some way
+				response.Frames = append(response.Frames, empty_frame)
+				response.Error = err
+				return response
+			}
+		}
 
-    // Separate the fractional seconds so we can convert it into a time.Time
-    sec, dec := math.Modf(tf)
-    times[i] = time.Unix(int64(sec), int64(dec*(1e9)))
-    values[i] = v
-  }
+		// Separate the fractional seconds so we can convert it into a time.Time
+		sec, dec := math.Modf(tf)
+		times[i] = time.Unix(int64(sec), int64(dec*(1e9)))
 
-  // get any error encountered during iteration
-  err = rows.Err()
-  if err != nil {
-    log.DefaultLogger.Error(fl() + "query row error")
-  }
+		// If we are doing a unit conversion, perform it now while we have the single value in hand
+		switch qm.UnitConversion {
 
-  // Start a new frame and add the times + values
-  frame := data.NewFrame("response")
-  frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
-  frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
+		case UNIT_CONVERT_NONE:
+			// No conversion, just assign it straight over
+			v = tv
+
+		case UNIT_CONVERT_DEG_TO_RAD:
+			// RAD = DEG * π/180  (1° = 0.01745rad)
+			v = tv * (math.Pi / 180)
+
+		case UNIT_CONVERT_RAD_TO_DEG:
+			// DEG = RAD * 180/π  (1rad = 57.296°)
+			v = tv * (180 / math.Pi)
+
+		case UNIT_CONVERT_K_TO_C:
+			// °C = K + 273.15
+			v = tv + 273.15
+
+		case UNIT_CONVERT_C_TO_K:
+			// K = °C − 273.15
+			v = tv - 273.15
+
+		default:
+			// Send back an empty frame with an error, we did not understand the conversion
+			response.Frames = append(response.Frames, empty_frame)
+			response.Error = fmt.Errorf("Unknown unit conversion: %d", qm.UnitConversion)
+			return response
+		}
+
+		values[i] = v
+
+	}
+
+	// get any error encountered during iteration
+	err = rows.Err()
+	if err != nil {
+		log.DefaultLogger.Error(fl() + "query row error: " + err.Error())
+		response.Error = fmt.Errorf("row query error: " + err.Error())
+	}
+
+	// Start a new frame and add the times + values
+	frame := data.NewFrame("response")
+	frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+	frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
 
 	// add the frames to the response
 	response.Frames = append(response.Frames, frame)
