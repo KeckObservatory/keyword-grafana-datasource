@@ -48,13 +48,24 @@ type DatasourceSettings struct {
 	MetaTable string `json:"metatable"`
 }
 
-// Define the unit conversion transforms, this maps onto the unitConversionOptions list in QueryEditor.tsx
+// Define the unit conversions, this maps onto the unitConversionOptions list in QueryEditor.tsx
 const (
-	UNIT_CONVERT_NONE       = iota
-	UNIT_CONVERT_DEG_TO_RAD = iota
-	UNIT_CONVERT_RAD_TO_DEG = iota
-	UNIT_CONVERT_K_TO_C     = iota
-	UNIT_CONVERT_C_TO_K     = iota
+	UNIT_CONVERT_NONE          = iota
+	UNIT_CONVERT_DEG_TO_RAD    = iota
+	UNIT_CONVERT_RAD_TO_DEG    = iota
+	UNIT_CONVERT_RAD_TO_ARCSEC = iota
+	UNIT_CONVERT_K_TO_C        = iota
+	UNIT_CONVERT_C_TO_K        = iota
+)
+
+// Define the data transforms, this maps onto the transformOptions list in QueryEditor.tsx
+const (
+	TRANSFORM_NONE                  = iota
+	TRANSFORM_FIRST_DERIVATVE       = iota
+	TRANSFORM_FIRST_DERIVATVE_1HZ   = iota
+	TRANSFORM_FIRST_DERIVATVE_10HZ  = iota
+	TRANSFORM_FIRST_DERIVATVE_100HZ = iota
+	TRANSFORM_DELTA                 = iota
 )
 
 // LoadSettings gets the relevant settings from the plugin context
@@ -146,12 +157,12 @@ func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDa
 }
 
 type queryModel struct {
-	//Constant string `json:"constant"`
 	//Datasource string `json:"datasource"`
 	//DatasourceId string `json:"datasourceId"`
 	Format         string `json:"format"`
 	QueryText      string `json:"queryText"`
 	UnitConversion int    `json:"unitConversion"`
+	Transform      int    `json:"transform"`
 	IntervalMs     int    `json:"intervalMs"`
 	MaxDataPoints  int    `json:"maxDataPoints"`
 	//OrgId string `json:"orgId"`
@@ -242,8 +253,9 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 	times := make([]time.Time, count)
 	values := make([]float64, count)
 
-	var tf float64
-	var tv, v float64
+	// Temporary variables for conversions/transforms
+	var timetemp float64
+	var valtemp, val float64
 	var i int32
 
 	// Iterate only as many rows as predicted, it's possible more rows arrived after the initial query executed!
@@ -253,7 +265,7 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 		if rows.Next() {
 
 			// Pull the elements out of the row
-			err = rows.Scan(&tf, &tv)
+			err = rows.Scan(&timetemp, &valtemp)
 			if err != nil {
 				log.DefaultLogger.Error(fl() + "query scan error: " + err.Error())
 
@@ -265,7 +277,7 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 		}
 
 		// Separate the fractional seconds so we can convert it into a time.Time
-		sec, dec := math.Modf(tf)
+		sec, dec := math.Modf(timetemp)
 		times[i] = time.Unix(int64(sec), int64(dec*(1e9)))
 
 		// If we are doing a unit conversion, perform it now while we have the single value in hand
@@ -273,23 +285,27 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 
 		case UNIT_CONVERT_NONE:
 			// No conversion, just assign it straight over
-			v = tv
+			val = valtemp
 
 		case UNIT_CONVERT_DEG_TO_RAD:
 			// RAD = DEG * π/180  (1° = 0.01745rad)
-			v = tv * (math.Pi / 180)
+			val = valtemp * (math.Pi / 180)
 
 		case UNIT_CONVERT_RAD_TO_DEG:
 			// DEG = RAD * 180/π  (1rad = 57.296°)
-			v = tv * (180 / math.Pi)
+			val = valtemp * (180 / math.Pi)
+
+		case UNIT_CONVERT_RAD_TO_ARCSEC:
+			// ARCSEC = RAD * (3600 * 180)/π  (1rad = 206264.806")
+			val = valtemp * (3600 * 180 / math.Pi)
 
 		case UNIT_CONVERT_K_TO_C:
 			// °C = K + 273.15
-			v = tv + 273.15
+			val = valtemp + 273.15
 
 		case UNIT_CONVERT_C_TO_K:
 			// K = °C − 273.15
-			v = tv - 273.15
+			val = valtemp - 273.15
 
 		default:
 			// Send back an empty frame with an error, we did not understand the conversion
@@ -298,11 +314,75 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 			return response
 		}
 
-		values[i] = v
+		// Assign the value to the result array
+		values[i] = val
+	}
+
+	// Perform any requested data transforms
+	switch qm.Transform {
+
+	case TRANSFORM_NONE:
+		break
+
+	case TRANSFORM_FIRST_DERIVATVE, TRANSFORM_FIRST_DERIVATVE_1HZ, TRANSFORM_FIRST_DERIVATVE_10HZ, TRANSFORM_FIRST_DERIVATVE_100HZ:
+
+		// Compute the first derivative of the data.
+		dtimes := make([]time.Time, count-1)
+		dvalues := make([]float64, count-1)
+
+		for i = 1; i < count; i++ {
+			// Calculate the dt
+			dtimes[i-1] = times[i]
+
+			// Calculate the dy/dt
+			var dt, dvdt float64
+			dt = (times[i].Sub(times[i-1])).Seconds()
+			dvdt = (values[i] - values[i-1]) / dt
+
+			if qm.Transform == TRANSFORM_FIRST_DERIVATVE_1HZ {
+				dvdt = math.Round(dvdt)
+			} else if qm.Transform == TRANSFORM_FIRST_DERIVATVE_10HZ {
+				dvdt = math.Round(dvdt*10) / 10
+			} else if qm.Transform == TRANSFORM_FIRST_DERIVATVE_100HZ {
+				dvdt = math.Round(dvdt*100) / 100
+			}
+
+			dvalues[i-1] = dvdt
+		}
+
+		// Reassign the original arrays to be the 1st derivative results
+		times = dtimes
+		values = dvalues
+
+	case TRANSFORM_DELTA:
+		// Compute the deltas of the data.  This algorithm replicates what numpy diff() does in Python,
+		// to the extent that it disregards the time series data.  The resultant arrays have one fewer element,
+		// we drop the 0th element of time and value.  It's like a first derivative where dt is always 1.
+		// See https://numpy.org/doc/stable/reference/generated/numpy.diff.html
+		dtimes := make([]time.Time, count-1)
+		dvalues := make([]float64, count-1)
+
+		for i = 1; i < count; i++ {
+			// Bring the time val straight across, shifted by one
+			dtimes[i-1] = times[i]
+
+			// Calculate the dx/dt and assume dt is always 1
+			dvalues[i-1] = values[i] - values[i-1]
+		}
+
+		// Reassign the original arrays to be the new results
+		times = dtimes
+		values = dvalues
+
+	default:
+		// Send back an empty frame with an error, we did not understand the transform
+		response.Frames = append(response.Frames, empty_frame)
+		response.Error = fmt.Errorf("Unknown transform: %d", qm.Transform)
+		return response
 
 	}
 
-	// get any error encountered during iteration
+	// Get any error encountered during iteration of the SQL result
 	err = rows.Err()
 	if err != nil {
 		log.DefaultLogger.Error(fl() + "query row error: " + err.Error())
@@ -511,6 +591,6 @@ func newDataSourceInstance(setting backend.DataSourceInstanceSettings) (instance
 }
 
 func (s *instanceSettings) Dispose() {
-	// Called before creatinga a new instance to allow plugin authors
+	// Called before creating a a new instance to allow plugin authors
 	// to cleanup.
 }

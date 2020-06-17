@@ -5,10 +5,12 @@ export interface KeywordQuery extends DataQuery {
   service: string;
   keyword: string;
   unitConversion: number;
+  transform: number;
 }
 
 export const defaultQuery: Partial<KeywordQuery> = {
   unitConversion: 0,
+  transform: 0,
 };
 
 /**

@@ -32,13 +32,29 @@ export class QueryEditor extends PureComponent<Props> {
     { label: 'none', value: 0 },
     { label: 'degrees to radians', value: 1 },
     { label: 'radians to degrees', value: 2 },
-    { label: 'Kelvin to Celcius', value: 3 },
-    { label: 'Celcius to Kelvin', value: 4 },
+    { label: 'radians to arcseconds', value: 3 },
+    { label: 'Kelvin to Celcius', value: 4 },
+    { label: 'Celcius to Kelvin', value: 5 },
   ];
 
   onUnitConversionChange = (item: any) => {
     const { onChange, query, onRunQuery } = this.props;
     onChange({ ...query, unitConversion: item.value });
+    onRunQuery();
+  };
+
+  transformOptions = [
+    { label: 'none', value: 0 },
+    { label: '1st derivative (no rounding)', value: 1 },
+    { label: '1st derivative (1Hz rounding)', value: 2 },
+    { label: '1st derivative (10Hz rounding)', value: 3 },
+    { label: '1st derivative (100Hz rounding)', value: 4 },
+    { label: 'delta', value: 5 },
+  ];
+
+  onTransformChange = (item: any) => {
+    const { onChange, query, onRunQuery } = this.props;
+    onChange({ ...query, transform: item.value });
     onRunQuery();
   };
 
@@ -81,13 +97,27 @@ export class QueryEditor extends PureComponent<Props> {
             Units conversion
           </InlineFormLabel>
           <Select
-            width={20}
+            width={30}
             placeholder={'none'}
             defaultValue={0}
             options={this.unitConversionOptions}
             value={query.unitConversion}
             allowCustomValue={false}
             onChange={this.onUnitConversionChange}
+          />
+        </div>
+        <div className="gf-form-inline">
+          <InlineFormLabel width={10} className="transform" tooltip={<p>Transform data.</p>}>
+            Transform
+          </InlineFormLabel>
+          <Select
+            width={30}
+            placeholder={'none'}
+            defaultValue={0}
+            options={this.transformOptions}
+            value={query.transform}
+            allowCustomValue={false}
+            onChange={this.onTransformChange}
           />
         </div>
       </>
