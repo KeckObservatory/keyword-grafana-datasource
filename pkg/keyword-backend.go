@@ -165,8 +165,8 @@ type queryModel struct {
 	Transform      int    `json:"transform"`
 	IntervalMs     int    `json:"intervalMs"`
 	MaxDataPoints  int    `json:"maxDataPoints"`
-	//OrgId string `json:"orgId"`
-	//RefId string `json:"refId"`
+	OrgId          int    `json:"orgId"`
+	RefId          string `json:"refId"`
 }
 
 func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery, db *sql.DB) backend.DataResponse {
@@ -391,7 +391,14 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 
 	// Start a new frame and add the times + values
 	frame := data.NewFrame("response")
-	frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+	frame.RefID = qm.RefId
+	frame.Name = qm.QueryText
+
+	// It looks like you can submit the values with any string for a name, which will be appended to the
+	// .Name field above (thus creating a series named "service.KEYWORD values" which may not be the desired
+	// name for the series.  Thus, submit it with an empty string for now which appears to work.
+	//frame.Fields = append(frame.Fields, data.NewField("values", nil, values))
+	frame.Fields = append(frame.Fields, data.NewField("", nil, values))
 	frame.Fields = append(frame.Fields, data.NewField("time", nil, times))
 
 	// add the frames to the response
