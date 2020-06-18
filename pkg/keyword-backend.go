@@ -86,8 +86,6 @@ func newDatasource() datasource.ServeOpts {
 	// Create an instance manager for the plugin. The function passed
 	// into `NewInstanceManger` is called when the instance is created
 	// for the first time or when a datasource configuration changed.
-
-	// Enable line numbers in logging
 	log.DefaultLogger.Info(fl() + "Creating new keyword datasource")
 
 	im := datasource.NewInstanceManager(newDataSourceInstance)
@@ -99,8 +97,8 @@ func newDatasource() datasource.ServeOpts {
 	httpResourceHandler := httpadapter.New(mux)
 
 	// Bind the HTTP paths to functions that respond to them
-	mux.HandleFunc("/keywords", ds.handleResourceKeywords)
 	mux.HandleFunc("/services", ds.handleResourceKeywords)
+	mux.HandleFunc("/keywords", ds.handleResourceKeywords)
 
 	return datasource.ServeOpts{
 		CallResourceHandler: httpResourceHandler,
@@ -120,7 +118,7 @@ type KeywordDatasource struct {
 // req contains the queries []DataQuery (where each query contains RefID as a unique identifer).
 // The QueryDataResponse contains a map of RefID to the response for each query, and each response
 // contains Frames ([]*Frame).
-func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
+func (ds *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDataRequest) (*backend.QueryDataResponse, error) {
 	log.DefaultLogger.Info(fl()+"keyword-backend.go:QueryData", "request", req)
 
 	// create response struct
@@ -146,7 +144,7 @@ func (td *KeywordDatasource) QueryData(ctx context.Context, req *backend.QueryDa
 
 	// loop over queries and execute them individually.
 	for _, q := range req.Queries {
-		res := td.query(ctx, q, db)
+		res := ds.query(ctx, q, db)
 
 		// save the response in a hashmap
 		// based on with RefID as identifier
@@ -169,7 +167,7 @@ type queryModel struct {
 	RefId          string `json:"refId"`
 }
 
-func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery, db *sql.DB) backend.DataResponse {
+func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery, db *sql.DB) backend.DataResponse {
 	// Unmarshal the json into our queryModel
 	var qm queryModel
 
@@ -411,7 +409,7 @@ func (td *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 // The main use case for these health checks is the test button on the
 // datasource configuration page which allows users to verify that
 // a datasource is working as expected.
-func (td *KeywordDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
+func (ds *KeywordDatasource) CheckHealth(ctx context.Context, req *backend.CheckHealthRequest) (*backend.CheckHealthResult, error) {
 	var status = backend.HealthStatusOk
 	var message = "Data source is working"
 
