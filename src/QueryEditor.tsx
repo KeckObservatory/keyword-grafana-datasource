@@ -29,7 +29,7 @@ export class QueryEditor extends PureComponent<Props> {
   };
 
   unitConversionOptions = [
-    { label: 'none', value: 0 },
+    { label: '(none)', value: 0 },
     { label: 'degrees to radians', value: 1 },
     { label: 'radians to degrees', value: 2 },
     { label: 'radians to arcseconds', value: 3 },
@@ -44,7 +44,7 @@ export class QueryEditor extends PureComponent<Props> {
   };
 
   transformOptions = [
-    { label: 'none', value: 0 },
+    { label: '(none)', value: 0 },
     { label: '1st derivative (no rounding)', value: 1 },
     { label: '1st derivative (1Hz rounding)', value: 2 },
     { label: '1st derivative (10Hz rounding)', value: 3 },
@@ -71,7 +71,7 @@ export class QueryEditor extends PureComponent<Props> {
             className="query-keyword"
             tooltip={
               <p>
-                Select a <code>keyword</code>.
+                Select a keyword.
               </p>
             }
           >
@@ -98,7 +98,7 @@ export class QueryEditor extends PureComponent<Props> {
           </InlineFormLabel>
           <Select
             width={30}
-            placeholder={'none'}
+            placeholder={'(none)'}
             defaultValue={0}
             options={this.unitConversionOptions}
             value={query.unitConversion}
@@ -112,7 +112,7 @@ export class QueryEditor extends PureComponent<Props> {
           </InlineFormLabel>
           <Select
             width={30}
-            placeholder={'none'}
+            placeholder={'(none)'}
             defaultValue={0}
             options={this.transformOptions}
             value={query.transform}

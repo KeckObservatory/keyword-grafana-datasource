@@ -7,6 +7,7 @@ import (
 	"github.com/lib/pq"
 	"math"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"time"
@@ -509,7 +510,13 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 	if strings.HasPrefix(req.URL.String(), "/keywords") {
 
 		// The only parameter expected to come in is the one indicating for which service to retrieve the keywords
-		service := strings.Split(req.URL.RawQuery, "=")[1]
+		params, err := url.ParseQuery(req.URL.RawQuery)
+		if err != nil {
+			log.DefaultLogger.Error(fl() + "keywords URL error: " + err.Error())
+			writeResult(rw, "?", nil, err)
+			return
+		}
+		service := params.Get("service")
 
 		sqlStatement := "select keyword from ktlmeta where service = $1 order by keyword asc;"
 		rows, err := db.Query(sqlStatement, service)
@@ -582,7 +589,14 @@ func (ds *KeywordDatasource) handleResourceKeywords(rw http.ResponseWriter, req 
 		}
 
 		writeResult(rw, "services", services, err)
+
+	} else {
+
+		// If we got this far, it was a bogus request
+		log.DefaultLogger.Error(fl() + "invalid request string")
+		writeResult(rw, "?", nil, err)
 	}
+
 }
 
 type instanceSettings struct {
