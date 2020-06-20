@@ -66,27 +66,19 @@ export class QueryEditor extends PureComponent<Props> {
     return (
       <>
         <div className="gf-form-inline">
-          <InlineFormLabel
-            width={10}
-            className="query-keyword"
-            tooltip={
-              <p>
-                Select a keyword.
-              </p>
-            }
-          >
+          <InlineFormLabel width={10} className="query-keyword" tooltip={<p>Select a keyword.</p>}>
             Keyword selection
           </InlineFormLabel>
           <SegmentAsync
             loadOptions={() => datasource.getServices()}
-            placeholder="dcs1"
+            placeholder="(select a service)"
             value={query.service}
             allowCustomValue={false}
             onChange={this.onServiceChange}
           ></SegmentAsync>
           <SegmentAsync
             loadOptions={() => datasource.getKeywords(query.service)}
-            placeholder="PRIMTEMP"
+            placeholder="(select a keyword))"
             value={query.keyword}
             allowCustomValue={false}
             onChange={this.onKeywordChange}
