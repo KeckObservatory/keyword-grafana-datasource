@@ -166,6 +166,7 @@ type queryModel struct {
 	MaxDataPoints  int    `json:"maxDataPoints"`
 	OrgId          int    `json:"orgId"`
 	RefId          string `json:"refId"`
+	Hide           bool   `json:"hide"`
 }
 
 func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery, db *sql.DB) backend.DataResponse {
@@ -177,6 +178,11 @@ func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 	// Return an error if the unmarshal fails
 	response.Error = json.Unmarshal(query.JSON, &qm)
 	if response.Error != nil {
+		return response
+	}
+
+	// Return nothing if we are hiding this keyword
+	if qm.Hide {
 		return response
 	}
 
