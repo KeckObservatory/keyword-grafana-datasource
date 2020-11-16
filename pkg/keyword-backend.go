@@ -217,7 +217,7 @@ func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 	service = pq.QuoteIdentifier(service)
 
 	// Build a SQL query for just counting
-	sql_count := fmt.Sprintf("select count(time) from %s where keyword = $1 and time >= $2 and time <= $3 order by time asc;", service)
+	sql_count := fmt.Sprintf("select count(time) from %s where keyword = $1 and time >= $2 and time <= $3;", service)
 
 	// Run the query once to see how many we are going to get back
 	row := db.QueryRow(sql_count, keyword, from_u, to_u)
