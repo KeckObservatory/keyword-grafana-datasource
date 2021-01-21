@@ -11,10 +11,13 @@
   "author": "Paul Richards",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@grafana/data": "7.0.1",
-    "@grafana/toolkit": "7.0.1",
-    "@grafana/runtime": "7.0.1",
-    "@grafana/ui": "7.0.1",
+    "@grafana/data": "latest",
+    "@grafana/toolkit": "latest",
+    "@grafana/runtime": "latest",
+    "@grafana/ui": "latest",
     "@types/lodash": "latest"
+  },
+  "resolutions": {
+  "rxjs": "6.6.3"
   }
 }
