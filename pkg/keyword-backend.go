@@ -244,7 +244,8 @@ func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 	}
 
 	// Setup and perform the query for the real data set now
-	sql := fmt.Sprintf("select time, binvalue from %s where keyword = $1 and time >= $2 and time <= $3 order by time asc;", service)
+	// 2021-08-30: trim the binvalue so whitespace doesn't affect the float64 conversion below
+	sql := fmt.Sprintf("select time, trim(binvalue) from %s where keyword = $1 and time >= $2 and time <= $3 order by time asc;", service)
 	rows, err := db.Query(sql, keyword, from_u, to_u)
 
 	if err != nil {
@@ -270,7 +271,9 @@ func (ds *KeywordDatasource) query(ctx context.Context, query backend.DataQuery,
 		if rows.Next() {
 
 			// Pull the elements out of the row
+
 			err = rows.Scan(&timetemp, &valtemp)
+
 			if err != nil {
 				log.DefaultLogger.Error(fl() + "query scan error: " + err.Error())
 
