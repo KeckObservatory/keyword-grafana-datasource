@@ -4,13 +4,9 @@ apt install ubuntu-desktop
 systemctl disable systemd-networkd.service
 
 # Grafana
-sudo apt-get install -y adduser libfontconfig1 musl
-
-wget https://dl.grafana.com/enterprise/release/grafana-enterprise_11.4.0_arm64.deb
-sudo dpkg -i grafana-enterprise_11.4.0_arm64.deb
-
-wget https://dl.grafana.com/oss/release/grafana_11.4.0_arm64.deb
-sudo dpkg -i grafana_11.4.0_arm64.deb
+apt install -y adduser libfontconfig1 musl
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_11.4.0_amd64.deb
+dpkg -i grafana-enterprise_11.4.0_amd64.deb
 
 systemctl daemon-reload
 systemctl enable grafana-server
@@ -29,9 +25,8 @@ chown -R grafana /usr/share/grafana
 
 # ----------
 # Install Go
-#wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
-wget https://go.dev/dl/go1.23.4.linux-arm64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.4.linux-arm64.tar.gz
+wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.4.linux-amd64.tar.gz
 
 # Add to /etc/profile
 export PATH=$PATH:/usr/local/go/bin
@@ -79,7 +74,6 @@ npm run dev
 
 go get github.com/lib/pq
 mage -v build:linux
-# mage -v build:linuxARM64
 
 # Modify Grafana to see plugin
 vi /etc/grafana/grafana.ini
