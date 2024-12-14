@@ -1,128 +1,98 @@
-# Grafana data source plugin template
+```
+# Clean install of Ubuntu Server 24.04
+apt install ubuntu-desktop
+systemctl disable systemd-networkd.service
 
-This template is a starting point for building a Data Source Plugin for Grafana.
+# Grafana
+sudo apt-get install -y adduser libfontconfig1 musl
 
-## What are Grafana data source plugins?
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_11.4.0_arm64.deb
+sudo dpkg -i grafana-enterprise_11.4.0_arm64.deb
 
-Grafana supports a wide range of data sources, including Prometheus, MySQL, and even Datadog. There’s a good chance you can already visualize metrics from the systems you have set up. In some cases, though, you already have an in-house metrics solution that you’d like to add to your Grafana dashboards. Grafana Data Source Plugins enables integrating such solutions with Grafana.
+wget https://dl.grafana.com/oss/release/grafana_11.4.0_arm64.deb
+sudo dpkg -i grafana_11.4.0_arm64.deb
 
-## Getting started
+systemctl daemon-reload
+systemctl enable grafana-server
+systemctl start grafana-server
 
-### Backend
+# verify Grafana is running, check http://localhost:3000
 
-1. Update [Grafana plugin SDK for Go](https://grafana.com/developers/plugin-tools/key-concepts/backend-plugins/grafana-plugin-sdk-for-go) dependency to the latest minor version:
+systemctl stop grafana-server
 
-   ```bash
-   go get -u github.com/grafana/grafana-plugin-sdk-go
-   go mod tidy
-   ```
+# ---------
+# setup grafana user
+chsh grafana
+# /bin/bash
+chown -R grafana /usr/share/grafana
 
-2. Build backend plugin binaries for Linux, Windows and Darwin:
 
-   ```bash
-   mage -v
-   ```
+# ----------
+# Install Go
+#wget https://go.dev/dl/go1.23.4.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.23.4.linux-arm64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.23.4.linux-arm64.tar.gz
 
-3. List all available Mage targets for additional commands:
+# Add to /etc/profile
+export PATH=$PATH:/usr/local/go/bin
 
-   ```bash
-   mage -l
-   ```
+# Add to ~/.profile
+export PATH=$PATH:/usr/local/go/bin:~/go/bin
 
-### Frontend
+# Test
+go version
 
-1. Install dependencies
 
-   ```bash
-   npm install
-   ```
+# ----------
+# Install Node
+# installs nvm (Node Version Manager)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 
-2. Build plugin in development mode and run in watch mode
+# download and install Node.js (you may need to restart the terminal)
+nvm install 23
 
-   ```bash
-   npm run dev
-   ```
+# verifies the right Node.js version is in the environment
+node -v # should print `v23.4.0`
 
-3. Build plugin in production mode
+# verifies the right npm version is in the environment
+npm -v # should print `10.9.2`
 
-   ```bash
-   npm run build
-   ```
 
-4. Run the tests (using Jest)
+# ----------
+# Install Mage
+go install github.com/magefile/mage@latest
+mage -init
 
-   ```bash
-   # Runs the tests and watches for changes, requires git init first
-   npm run test
 
-   # Exits after running all the tests
-   npm run test:ci
-   ```
+# ----------
+su - grafana
+mkdir /var/lib/grafana/plugins
+cd /var/lib/grafana/plugins
+git clone https://github.com/KeckObservatory/keyword-grafana-datasource
 
-5. Spin up a Grafana instance and run the plugin inside it (using Docker)
+# Build keyword datasource
+cd /var/lib/grafana/plugins/keyword-grafana-datasource
+npm install
+npm run typecheck
+npm run dev
+# hit Ctrl-C once the screen stops updating
 
-   ```bash
-   npm run server
-   ```
+go get github.com/lib/pq
+mage -v build:linux
+# mage -v build:linuxARM64
 
-6. Run the E2E tests (using Cypress)
+# Modify Grafana to see plugin
+vi /etc/grafana/grafana.ini
 
-   ```bash
-   # Spins up a Grafana instance first that we tests against
-   npm run server
+# locate this line:
+;allow_loading_unsigned_plugins
+# change it to:
+allow_loading_unsigned_plugins = keyword-grafana-datasource
 
-   # Starts the tests
-   npm run e2e
-   ```
+(as root)
+systemctl restart grafana-server
+```
 
-7. Run the linter
-
-   ```bash
-   npm run lint
-
-   # or
-
-   npm run lint:fix
-   ```
-
-# Distributing your plugin
-
-When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
-
-_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
-
-## Initial steps
-
-Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria) documentation carefully.
-
-`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
-
-Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/legal/plugins/#what-are-the-different-classifications-of-plugins) documentation to understand the differences between the types of signature level.
-
-1. Create a [Grafana Cloud account](https://grafana.com/signup).
-2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
-   - _You can find the plugin ID in the `plugin.json` file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
-3. Create a Grafana Cloud API key with the `PluginPublisher` role.
-4. Keep a record of this API key as it will be required for signing a plugin
-
-## Signing a plugin
-
-### Using Github actions release workflow
-
-If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
-
-1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
-2. Click "New repository secret"
-3. Name the secret "GRAFANA_API_KEY"
-4. Paste your Grafana Cloud API key in the Secret field
-5. Click "Add secret"
-
-#### Push a version tag
-
-To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
-
-1. Run `npm version <major|minor|patch>`
-2. Run `git push origin main --follow-tags`
 
 ## Learn more
 
