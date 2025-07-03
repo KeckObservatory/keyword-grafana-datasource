@@ -1,3 +1,7 @@
+# 2025-07-02 prichards: this repository is now deprecated
+A new version of the datasource ported to the latest Grafana SDK is here: https://github.com/KeckObservatory/wmko-keyword-datasource
+
+
 ```
 # Clean install of Ubuntu Server 24.04
 apt install ubuntu-desktop
